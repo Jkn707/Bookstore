@@ -51,6 +51,10 @@ Como podemos ver dentro del proyecto tenemos varios archivos pero vamos a resalt
 
 Entre las **tecnologías y recursos** que utilizamos para el desarrollo de este tenemos Python, Flask, HTML, Docker y Docker Compose, entre otros. Todo lo anterior nos permite llegar a el proyecto final donde se logra la gestión de los libros, la interfaz de usuario a través de la cual podemos gestionar estos recursos y el almacenamiento de la información más importante en base de datos.
 
+
+## Infraestructura
+
+
 ## Paso a paso del despliegue de BookStore en la instancia EC2 de AWS
 
 ### 1. Preparación de la Máquina Virtual en AWS
@@ -168,7 +172,7 @@ Contenido:
 - `sudo systemctl reload nginx`
   
 ### 7. Obtener Certificado SSL con Certbot
-- `sudo certbot --nginx -d laranatriste.com -d www.laranatriste.com`
+- `sudo certbot --nginx -d laranatriste.site -d www.laranatriste.site`
   
 Sigue las instrucciones de Certbot para obtener y configurar automáticamente el certificado SSL.
 Certbot modificará automáticamente la configuración de NGINX para redirigir HTTP a HTTPS y configurar el certificado SSL.
@@ -193,3 +197,109 @@ Para iniciar la base de datos y crear las tablas:
 Esto es para iniciar el shell de Flask, posteriormente para inicializar la base de datos y crear las tablas definidas en los modelos vamos a ejecutar el siguiente comando:
 * `from extensions import db`
 * `db.create_all()`
+
+
+---
+
+## 📦 Configuración de Autoescalado (ASG)
+
+El siguiente apartado describe de forma detallada cómo se implementó el Auto Scaling Group (ASG) para permitir que nuestra aplicación monolítica escale automáticamente con base en la demanda.
+
+
+# 🧱 Configuración de Autoescalado en AWS para Aplicación Monolítica
+
+## ✅ Objetivo
+
+Configurar el escalado automático de una aplicación monolítica en AWS utilizando máquinas virtuales (EC2) y grupos de autoescalado. La arquitectura sigue prácticas recomendadas para aplicaciones monolíticas en la nube.
+
+---
+
+## 1. Crear una Plantilla de Lanzamiento (Launch Template)
+
+Define cómo se lanza cada instancia EC2.
+
+### 🔧 Pasos:
+
+1. Ve a **EC2 > Launch Templates > Create launch template**.
+2. **Nombre de la plantilla:** `monolithic-app-template`
+3. **AMI:** Selecciona una imagen de Ubuntu (por ejemplo, Ubuntu 20.04 LTS)
+4. **Tipo de instancia:** `t2.micro`, `t3.micro`, según el caso
+5. **Par de llaves:** selecciona tu llave SSH
+6. **User data (script de inicio):**
+
+```bash
+#!/bin/bash
+apt-get update
+apt-get install -y apt-transport-https ca-certificates curl gnupg software-properties-common
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+add-apt-repository    "deb [arch=amd64] https://download.docker.com/linux/ubuntu    $(lsb_release -cs)    stable"
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io
+```
+
+## 🧰 Configuración de Docker Swarm y Autoescalado
+
+Cuando estás escalando horizontalmente, es necesario que cada nueva instancia que se lanza se una al clúster Docker Swarm que ya está en funcionamiento. Para hacerlo, debes agregar el comando de **docker swarm join** en el script de inicio de la plantilla de lanzamiento.
+
+Una vez que las instancias de EC2 sean lanzadas y se unan al clúster Docker Swarm, cada una puede comenzar a recibir tareas, gestionadas de manera automática por el *swarm manager*. Aquí es donde es crítico asegurarse de que el token de unión al swarm se configure correctamente en las instancias del ASG para que puedan unirse al nodo líder sin inconvenientes.
+
+```bash
+#!/bin/bash
+# Comando para unirse al Swarm como nodo trabajador
+sudo docker swarm join --token <swarm-token> <manager-ip>:2377
+```
+
+Con esto, cada nueva instancia lanzada por el ASG se unirá automáticamente al Swarm y comenzará a trabajar bajo la gestión del nodo líder.
+
+
+7. Haz clic en **Crear plantilla de lanzamiento**.
+
+---
+
+## 2. Crear un Auto Scaling Group (ASG)
+
+El ASG gestiona la cantidad de instancias EC2 según la demanda.
+
+### 📈 Pasos:
+
+1. Ve a **EC2 > Auto Scaling Groups > Create Auto Scaling Group**
+2. **Nombre del grupo:** `bookstore-app-asg`
+3. Usa la plantilla de lanzamiento: `bookstore-app-template`
+4. **Configuración de red:**
+   - Elige tu VPC
+   - Selecciona al menos **2 zonas de disponibilidad**
+5. **Capacidad deseada:** por ejemplo, 1
+6. **Capacidad mínima / máxima:** por ejemplo, min: 1, max: 3
+7. **Política de escalado:**
+   - Basada en utilización promedio de CPU
+   - Escalar si CPU > 70%
+   - Reducir si CPU < 30%
+
+---
+
+## 3. (Opcional) Agregar un Load Balancer
+
+Distribuye el tráfico entre instancias EC2 activas.
+
+### 🌐 Pasos:
+
+1. Ve a **EC2 > Load Balancers > Create Load Balancer**
+2. Elige **Application Load Balancer**
+3. Listener: HTTP (Puerto 80)
+4. Crea un **Target Group** para las instancias EC2
+5. Registra las instancias del grupo de autoescalado en el target group
+
+---
+
+
+** Es importante tomar en consideración que debemos agregar una base de datos única que pueda ser compartida entre las instancias y garantice la consistencia de la información
+
+---
+
+
+## 📎 Recursos
+
+- [AWS EC2 Launch Templates](https://docs.aws.amazon.com/es_es/AWSEC2/latest/UserGuide/ec2-launch-templates.html)
+- [AWS Auto Scaling Groups](https://docs.aws.amazon.com/es_es/autoscaling/ec2/userguide/AutoScalingGroup.html)
+
+---
