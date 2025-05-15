@@ -53,6 +53,7 @@ Entre las **tecnologías y recursos** que utilizamos para el desarrollo de este 
 
 
 ## Infraestructura
+![arquitectura_tet_p2](https://github.com/user-attachments/assets/c32cfe7c-4a48-49a0-80cc-b26872307475)
 
 
 ## Paso a paso del despliegue de BookStore en la instancia EC2 de AWS
